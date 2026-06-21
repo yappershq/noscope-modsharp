@@ -1,11 +1,12 @@
 <Project>
   <!--
-    Output marker for modsharp-deploy: it greps this file for "../.build" to know
-    that build output lands in <repo>/.build/ (one level up from the project dir).
-    Actual OutputPath is set per-project in NoScope/NoScope.csproj:
-      $(MSBuildThisFileDirectory)..\.build\modules\NoScope\
+    Build output goes to the repo-root .build/modules/NoScope/ directory (set via
+    OutputPath in NoScope/NoScope.csproj). modsharp-deploy zips the contents of
+    that .build/ folder straight into /game/sharp on the server, so NoScope/ lands
+    in /game/sharp/modules/ and .assets/locales/ lands in /game/sharp/locales/.
+
+    Do NOT reintroduce a two-dots-slash-dot-build marker string here: modsharp-deploy
+    greps this file for it and, if present, looks for build output one level ABOVE
+    the project dir. The project dir here IS the repo root, so that would be wrong.
   -->
-  <PropertyGroup>
-    <NoScopeBuildRoot>..\.build</NoScopeBuildRoot>
-  </PropertyGroup>
 </Project>
