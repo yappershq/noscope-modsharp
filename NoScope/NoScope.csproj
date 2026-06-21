@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <Authors>YappersHQ</Authors>
+    <Version>1.0.0</Version>
+    <Copyright>© 2026 YappersHQ</Copyright>
+
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>embedded</DebugType>
+
+    <!-- Emit into <repo>/.build/modules/NoScope/ so `modsharp-deploy` zips it straight to /game/sharp/modules -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\.build\modules\NoScope\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj\**" />
+    <Compile Remove="..\build\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ModSharp API surface (runtime provided by the server core) -->
+    <PackageReference Include="ModSharp.Sharp.Shared" Version="2.1.132" ExcludeAssets="runtime" />
+
+    <!-- SqlSugar MySQL stack -->
+    <PackageReference Include="MySqlConnector" Version="2.5.0" />
+    <PackageReference Include="SqlSugarCoreNoDrive" Version="5.1.4.213" />
+  </ItemGroup>
+
+</Project>

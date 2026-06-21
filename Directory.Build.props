@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Output marker for modsharp-deploy: it greps this file for "../.build" to know
+    that build output lands in <repo>/.build/ (one level up from the project dir).
+    Actual OutputPath is set per-project in NoScope/NoScope.csproj:
+      $(MSBuildThisFileDirectory)..\.build\modules\NoScope\
+  -->
+  <PropertyGroup>
+    <NoScopeBuildRoot>..\.build</NoScopeBuildRoot>
+  </PropertyGroup>
+</Project>
