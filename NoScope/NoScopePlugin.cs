@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Sharp.Modules.LocalizerManager.Shared;
 using Sharp.Shared;
-using Sharp.Shared.Definition;
 using Sharp.Shared.Enums;
 using Sharp.Shared.Listeners;
 using Sharp.Shared.Managers;
@@ -47,14 +48,32 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
 
     private const int CommandCooldownSeconds = 5;
 
+    /// <summary>Locale file name (without extension) under <c>{sharp}/locales/</c>.</summary>
+    private const string LocaleName = "noscope";
+
+    // Locale keys (declared in .assets/locales/noscope.json).
+    private const string KeyAnnounce          = "NoScope_Announce";
+    private const string KeyAnnounceHsSuffix  = "NoScope_Announce_HeadshotSuffix";
+    private const string KeyRecordedCount     = "NoScope_RecordedCount";
+    private const string KeyCooldown          = "NoScope_Cooldown";
+    private const string KeyNoDatabase        = "NoScope_NoDatabase";
+    private const string KeyQueryError        = "NoScope_QueryError";
+    private const string KeyNoRecords         = "NoScope_NoRecords";
+    private const string KeyTopHeader         = "NoScope_Top_Header";
+    private const string KeyTopRow            = "NoScope_Top_Row";
+    private const string KeyTopRowHsSuffix    = "NoScope_Top_RowHeadshotSuffix";
+    private const string KeyTopFooter         = "NoScope_Top_Footer";
+
     private readonly ILogger<NoScopePlugin> _logger;
     private readonly IModSharp              _modSharp;
     private readonly IClientManager         _clientManager;
     private readonly IEventManager          _eventManager;
+    private readonly ISharpModuleManager    _sharpModuleManager;
     private readonly string                 _sharpPath;
 
-    private NoScopeConfig   _config = new();
+    private NoScopeConfig    _config = new();
     private NoScopeDatabase? _db;
+    private ILocalizerManager? _localizer;
 
     /// <summary>Per-slot last command time (engine seconds). Indexed by player slot 0..63.</summary>
     private readonly double[] _lastCommandTime = new double[64];
@@ -77,11 +96,12 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
         bool            hotReload
     )
     {
-        _logger        = sharedSystem.GetLoggerFactory().CreateLogger<NoScopePlugin>();
-        _modSharp      = sharedSystem.GetModSharp();
-        _clientManager = sharedSystem.GetClientManager();
-        _eventManager  = sharedSystem.GetEventManager();
-        _sharpPath     = sharpPath ?? string.Empty;
+        _logger             = sharedSystem.GetLoggerFactory().CreateLogger<NoScopePlugin>();
+        _modSharp           = sharedSystem.GetModSharp();
+        _clientManager      = sharedSystem.GetClientManager();
+        _eventManager       = sharedSystem.GetEventManager();
+        _sharpModuleManager = sharedSystem.GetSharpModuleManager();
+        _sharpPath          = sharpPath ?? string.Empty;
     }
 
     #region Lifecycle
@@ -102,6 +122,20 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
 
     public void OnAllModulesLoaded()
     {
+        // Resolve LocalizerManager here — publishers finish PostInit before any OAM fires.
+        _localizer = _sharpModuleManager
+            .GetOptionalSharpModuleInterface<ILocalizerManager>(ILocalizerManager.Identity)?.Instance;
+
+        if (_localizer is null)
+        {
+            _logger.LogWarning(
+                "[NoScope] LocalizerManager not found — messages will fall back to plain text. Is the LocalizerManager module loaded?");
+        }
+        else
+        {
+            _localizer.LoadLocaleFile(LocaleName, suppressDuplicationWarnings: true);
+        }
+
         if (!_config.HasDatabaseCredentials)
         {
             _logger.LogWarning(
@@ -125,8 +159,66 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
         }
     }
 
-    public void OnLibraryConnected(string name)  { }
-    public void OnLibraryDisconnect(string name) { }
+    public void OnLibraryConnected(string name)
+    {
+        if (name != ILocalizerManager.Identity && name != "LocalizerManager")
+            return;
+
+        _localizer = _sharpModuleManager
+            .GetOptionalSharpModuleInterface<ILocalizerManager>(ILocalizerManager.Identity)?.Instance;
+
+        _localizer?.LoadLocaleFile(LocaleName, suppressDuplicationWarnings: true);
+    }
+
+    public void OnLibraryDisconnect(string name)
+    {
+        if (name == ILocalizerManager.Identity || name == "LocalizerManager")
+            _localizer = null;
+    }
+
+    /// <summary>
+    ///     Localizes a key in <paramref name="client" />'s Steam culture and returns the
+    ///     color-processed string. Falls back to the raw key when LocalizerManager is absent.
+    /// </summary>
+    private string Localize(IGameClient client, string key, params object?[] args)
+    {
+        if (_localizer is not { } mgr)
+            return key;
+
+        return ChatFormat.ProcessColorCodes(mgr.For(client).Localized(key, args).Build());
+    }
+
+    /// <summary>
+    ///     Localizes a key for <paramref name="client" /> WITHOUT color processing — used
+    ///     to build fragments (e.g. the headshot suffix) that are embedded as a format
+    ///     argument in a larger key, so the outer Transform processes their tokens once.
+    /// </summary>
+    private string LocalizeFragment(IGameClient client, string key)
+    {
+        if (_localizer is not { } mgr)
+            return string.Empty;
+
+        return mgr.For(client).Localized(key).Build();
+    }
+
+    /// <summary>
+    ///     Prints a localized, color-processed line to a single client's chat.
+    ///     Falls back to the raw key when LocalizerManager is unavailable.
+    /// </summary>
+    private void PrintLocalized(IGameClient client, string key, params object?[] args)
+    {
+        if (_localizer is not { } mgr)
+        {
+            client.Print(HudPrintChannel.Chat, key);
+            return;
+        }
+
+        mgr.For(client)
+            .Localized(key, args)
+            .Prefix(null)
+            .Transform(ChatFormat.ProcessColorCodes)
+            .Print();
+    }
 
     public void Shutdown()
     {
@@ -191,30 +283,37 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
         var attackerSteam  = attacker.SteamId.AsPrimitive();   // ulong
         var victimSteam    = victim.SteamId.AsPrimitive();
 
-        // Announce synchronously — `attacker`/`victim` are only used on this frame, never captured.
-        var headshotText = headshot
-            ? $" {ChatColor.Red}HEADSHOT!{ChatColor.White}"
-            : string.Empty;
-
-        var message =
-            $" {ChatColor.Green}{attackerName}{ChatColor.White} no-scoped "
-            + $"{ChatColor.Red}{victimName}{ChatColor.White} from "
-            + $"{ChatColor.Blue}{distance:0.0}{ChatColor.White} units away!{headshotText}";
+        // Announce synchronously — `attacker`/`victim` controllers/clients are only used on
+        // this frame, never captured. Rendered per-recipient so each sees their own culture.
+        var distanceText = distance.ToString("0.0", CultureInfo.InvariantCulture);
 
         switch (_config.NotificationTarget)
         {
             case NotificationTarget.All:
-                _modSharp.PrintToChatAll(message);
+                foreach (var c in _clientManager.GetGameClients(true))
+                {
+                    if (c.IsInGame)
+                        AnnounceNoScope(c, attackerName, victimName, distanceText, headshot);
+                }
+
                 break;
             case NotificationTarget.AttackerOnly:
-                attacker.Print(HudPrintChannel.Chat, message);
+                if (attacker.GetGameClient() is { IsInGame: true } atkOnly)
+                    AnnounceNoScope(atkOnly, attackerName, victimName, distanceText, headshot);
+
                 break;
             case NotificationTarget.VictimOnly:
-                victim.Print(HudPrintChannel.Chat, message);
+                if (victim.GetGameClient() is { IsInGame: true } vicOnly)
+                    AnnounceNoScope(vicOnly, attackerName, victimName, distanceText, headshot);
+
                 break;
             case NotificationTarget.AttackerAndVictim:
-                attacker.Print(HudPrintChannel.Chat, message);
-                victim.Print(HudPrintChannel.Chat, message);
+                if (attacker.GetGameClient() is { IsInGame: true } atk)
+                    AnnounceNoScope(atk, attackerName, victimName, distanceText, headshot);
+
+                if (victim.GetGameClient() is { IsInGame: true } vic)
+                    AnnounceNoScope(vic, attackerName, victimName, distanceText, headshot);
+
                 break;
             case NotificationTarget.None:
                 break;
@@ -235,6 +334,22 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
             MapName         = _modSharp.GetMapName() ?? "unknown",
             Timestamp       = DateTime.UtcNow,
         });
+    }
+
+    /// <summary>
+    ///     Renders + prints the no-scope announcement to one recipient in their culture.
+    ///     The headshot suffix is a localized fragment embedded as a format arg so the
+    ///     outer Transform processes its color tokens once.
+    /// </summary>
+    private void AnnounceNoScope(
+        IGameClient recipient,
+        string      attackerName,
+        string      victimName,
+        string      distanceText,
+        bool        headshot)
+    {
+        var hsSuffix = headshot ? LocalizeFragment(recipient, KeyAnnounceHsSuffix) : string.Empty;
+        PrintLocalized(recipient, KeyAnnounce, attackerName, victimName, distanceText, hsSuffix);
     }
 
     private void RecordKill(NoScopeRecord record)
@@ -265,9 +380,7 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
                     if (client is not { IsInGame: true })
                         return;
 
-                    client.Print(
-                        HudPrintChannel.Chat,
-                        $" {ChatColor.Green}You now have {ChatColor.Gold}{count}{ChatColor.Green} recorded no-scopes!");
+                    PrintLocalized(client, KeyRecordedCount, count);
                 });
             }
             catch (Exception ex)
@@ -298,9 +411,7 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
         if (elapsed < CommandCooldownSeconds)
         {
             var remaining = (int)Math.Ceiling(CommandCooldownSeconds - elapsed);
-            client.Print(
-                HudPrintChannel.Chat,
-                $" {ChatColor.Red}Command on cooldown! Wait {remaining} more seconds.");
+            PrintLocalized(client, KeyCooldown, remaining);
             return ECommandAction.Handled;
         }
 
@@ -309,7 +420,7 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
         var db = _db;
         if (db is null)
         {
-            client.Print(HudPrintChannel.Chat, $" {ChatColor.Red}No-scope records are not available (no database).");
+            PrintLocalized(client, KeyNoDatabase);
             return ECommandAction.Handled;
         }
 
@@ -334,7 +445,7 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
                     if (c is not { IsInGame: true })
                         return;
 
-                    c.Print(HudPrintChannel.Chat, $" {ChatColor.Red}Error retrieving no-scope records.");
+                    PrintLocalized(c, KeyQueryError);
                 });
                 return;
             }
@@ -348,28 +459,33 @@ public sealed class NoScopePlugin : IModSharpModule, IEventListener
 
                 if (records.Length == 0)
                 {
-                    c.Print(HudPrintChannel.Chat, $" {ChatColor.Green}No no-scope records found yet!");
+                    PrintLocalized(c, KeyNoRecords);
                     return;
                 }
 
-                c.Print(HudPrintChannel.Chat, $" {ChatColor.Green}=== Top No-Scope Kills ===");
+                PrintLocalized(c, KeyTopHeader);
 
                 for (var i = 0; i < records.Length; i++)
                 {
                     var r            = records[i];
-                    var headshotText = r.Headshot ? $" {ChatColor.Red}(HS){ChatColor.White}" : string.Empty;
+                    var headshotText = r.Headshot ? LocalizeFragment(c, KeyTopRowHsSuffix) : string.Empty;
                     var relativeTime = GetRelativeTime(r.Timestamp);
+                    var distanceText = r.Distance.ToString("0.0", CultureInfo.InvariantCulture);
 
-                    c.Print(
-                        HudPrintChannel.Chat,
-                        $" {ChatColor.Green}{i + 1}.{ChatColor.White} {r.AttackerName} "
-                        + $"{ChatColor.White}> {ChatColor.Red}{r.VictimName} {ChatColor.White}- "
-                        + $"{ChatColor.Blue}{r.Distance:0.0}{ChatColor.White}u - "
-                        + $"{ChatColor.Purple}{FormatWeapon(r.Weapon)}{ChatColor.White}{headshotText} - "
-                        + $"{r.MapName} - {ChatColor.Grey}{relativeTime}");
+                    PrintLocalized(
+                        c,
+                        KeyTopRow,
+                        i + 1,
+                        r.AttackerName,
+                        r.VictimName,
+                        distanceText,
+                        FormatWeapon(r.Weapon),
+                        headshotText,
+                        r.MapName,
+                        relativeTime);
                 }
 
-                c.Print(HudPrintChannel.Chat, $" {ChatColor.Green}======================");
+                PrintLocalized(c, KeyTopFooter);
             });
         });
 

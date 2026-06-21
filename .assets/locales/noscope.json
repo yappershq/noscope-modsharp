@@ -1,0 +1,35 @@
+{
+  "NoScope_Announce": {
+    "en-US": "{{green}}{0}{{default}} no-scoped {{red}}{1}{{default}} from {{blue}}{2}{{default}} units away!{3}"
+  },
+  "NoScope_Announce_HeadshotSuffix": {
+    "en-US": " {{red}}HEADSHOT!{{default}}"
+  },
+  "NoScope_RecordedCount": {
+    "en-US": "{{green}}You now have {{gold}}{0}{{green}} recorded no-scopes!"
+  },
+  "NoScope_Cooldown": {
+    "en-US": "{{red}}Command on cooldown! Wait {0} more seconds."
+  },
+  "NoScope_NoDatabase": {
+    "en-US": "{{red}}No-scope records are not available (no database)."
+  },
+  "NoScope_QueryError": {
+    "en-US": "{{red}}Error retrieving no-scope records."
+  },
+  "NoScope_NoRecords": {
+    "en-US": "{{green}}No no-scope records found yet!"
+  },
+  "NoScope_Top_Header": {
+    "en-US": "{{green}}=== Top No-Scope Kills ==="
+  },
+  "NoScope_Top_Row": {
+    "en-US": "{{green}}{0}.{{default}} {1} {{default}}> {{red}}{2} {{default}}- {{blue}}{3}{{default}}u - {{purple}}{4}{{default}}{5} - {6} - {{grey}}{7}"
+  },
+  "NoScope_Top_RowHeadshotSuffix": {
+    "en-US": " {{red}}(HS){{default}}"
+  },
+  "NoScope_Top_Footer": {
+    "en-US": "{{green}}======================"
+  }
+}

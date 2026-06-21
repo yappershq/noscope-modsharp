@@ -19,6 +19,10 @@
     <!-- Emit into <repo>/.build/modules/NoScope/ so `modsharp-deploy` zips it straight to /game/sharp/modules -->
     <OutputPath>$(MSBuildThisFileDirectory)..\.build\modules\NoScope\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!--
+      Note: modsharp-deploy expects build output under <project-dir>/.build.
+      Since this project's dir is the repo root, OutputPath above resolves to <repo>/.build/modules.
+    -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,6 +33,8 @@
   <ItemGroup>
     <!-- ModSharp API surface (runtime provided by the server core) -->
     <PackageReference Include="ModSharp.Sharp.Shared" Version="2.1.132" ExcludeAssets="runtime" />
+    <!-- LocalizerManager Shared API via NuGet; ExcludeAssets="runtime" - server already ships this DLL. -->
+    <PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="2.1.132" ExcludeAssets="runtime" />
 
     <!-- SqlSugar MySQL stack -->
     <PackageReference Include="MySqlConnector" Version="2.5.0" />
