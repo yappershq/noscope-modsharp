@@ -1,64 +1,55 @@
-# NoScope (ModSharp)
+<div align="center">
+  <h1><strong>NoScope</strong></h1>
+  <p>Announces no-scope sniper kills in CS2 chat with the kill distance, and keeps a MySQL distance leaderboard.</p>
+</div>
 
-A [ModSharp](https://github.com/Kxnrl/modsharp-public) plugin for CS2 that announces
-**no-scope sniper kills** in chat with the distance between attacker and victim, and records
-every qualifying kill in a MySQL database for a distance leaderboard.
+<p align="center">
+  <img src="https://img.shields.io/github/stars/yappershq/noscope-modsharp?style=flat&logo=github" alt="Stars">
+</p>
 
-This is a port of the CounterStrikeSharp `NoScope` plugin to ModSharp.
+---
 
-## What it does
+A [ModSharp](https://github.com/Kxnrl/modsharp-public) plugin for CS2. When a player lands a sniper kill without scoping in, NoScope announces it in chat with the distance between attacker and victim, and (optionally) records every qualifying kill in MySQL for a distance leaderboard. Ported from the CounterStrikeSharp NoScope plugin.
 
-- Hooks the `player_death` game event.
-- A kill counts as a no-scope when the engine's `noscope` flag is set **and** the weapon is
-  a sniper rifle (`awp`, `ssg08`, `scar20`, `g3sg1`) — i.e. the attacker fired without being scoped.
-- Announces the kill in chat: `<attacker> no-scoped <victim> from <distance> units away! [HEADSHOT!]`
-- Records the kill (attacker/victim names + SteamIDs, distance, weapon, headshot flag, map,
-  UTC timestamp) in MySQL, if the distance is at least `MinDistanceToRecord`.
-- After a recorded kill, privately tells the attacker their running no-scope count.
+## 🚀 Install
 
-## Commands
+Copy the build output into your ModSharp install (`<sharp>` = your `sharp` directory):
 
-Chat (also works in console with the `ms_` prefix):
+| From | To |
+|------|----|
+| `.build/modules/NoScope/` | `<sharp>/modules/NoScope/` |
+| `.build/locales/noscope.json` | `<sharp>/locales/noscope.json` |
 
-| Command | Description |
-|---|---|
-| `!noscopetop` | Show the top recorded no-scope kills (by distance). |
-| `!nstop` | Alias of `!noscopetop`. |
+Restart the server (or change map) to load. On first run the plugin writes `<sharp>/configs/noscope.jsonc`.
 
-Both commands have a per-player 5-second cooldown.
+Localized chat requires the **LocalizerManager** module (ships with ModSharp); without it, messages fall back to raw keys. The MySQL database is optional — leave the DB credentials blank and kills are still announced, just not recorded.
 
-## Config
+## ⌨️ Commands
 
-On first load the plugin writes `<sharp>/configs/noscope.jsonc`:
+Chat commands also work in console with the `ms_` prefix. Both share a per-player 5-second cooldown.
 
-```jsonc
-{
-  // Minimum distance (game units) for a no-scope to be saved to the database.
-  // Kills under this distance are still announced in chat, just not recorded.
-  "MinDistanceToRecord": 500.0,
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `!noscopetop` | `!nstop` | Show the top recorded no-scope kills, ranked by distance. |
 
-  // Number of rows shown by !noscopetop / !nstop.
-  "TopRecordsLimit": 10,
+## ⚙️ Configuration
 
-  // Who sees the no-scope announcement:
-  //   "All", "AttackerOnly", "VictimOnly", "AttackerAndVictim", "None"
-  "NotificationTarget": "All",
+`<sharp>/configs/noscope.jsonc` (auto-generated on first run):
 
-  // ── MySQL database ──
-  // REQUIRED for persistence + the leaderboard. Leave User/Password empty to
-  // disable the database entirely (kills are still announced in chat).
-  // Fill in real credentials before starting the server.
-  "DatabaseHost": "localhost",
-  "DatabasePort": 3306,
-  "DatabaseName": "noscope",
-  "DatabaseUser": "",
-  "DatabasePassword": ""
-}
-```
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `MinDistanceToRecord` | `500.0` | Minimum distance (game units) for a kill to be saved to the DB. Shorter kills are still announced, just not recorded. |
+| `TopRecordsLimit` | `10` | Number of rows shown by `!noscopetop` / `!nstop` (clamped 1–100). |
+| `NotificationTarget` | `"All"` | Who sees the announcement: `All`, `AttackerOnly`, `VictimOnly`, `AttackerAndVictim`, `None`. |
+| `DatabaseHost` | `"localhost"` | MySQL host. |
+| `DatabasePort` | `3306` | MySQL port. |
+| `DatabaseName` | `"noscope"` | MySQL database name. |
+| `DatabaseUser` | `""` | MySQL user. Leave blank to disable persistence. |
+| `DatabasePassword` | `""` | MySQL password. |
 
-## Database setup
+### Database setup
 
-NoScope uses MySQL via SqlSugar. Create a database (or reuse an existing one) and a user:
+Persistence and the leaderboard use MySQL via SqlSugar. Create a database and user, then fill in the credentials above:
 
 ```sql
 CREATE DATABASE noscope CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -67,14 +58,13 @@ GRANT ALL PRIVILEGES ON noscope.* TO 'noscope'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Fill in `DatabaseHost` / `DatabasePort` / `DatabaseName` / `DatabaseUser` / `DatabasePassword`
-in `noscope.jsonc`, then start the server. The `noscope_kills` table is created automatically
-on load. The connection pool is capped at 4 connections.
+The `noscope_kills` table is created automatically on load; the connection pool is capped at 4. If `DatabaseUser` is blank, the plugin still loads and announces kills — it just won't persist anything or serve the leaderboard.
 
-If credentials are left empty, the plugin still loads and announces kills in chat — it just
-won't persist anything or serve the leaderboard.
+## 🔧 How it works
 
-## Build
+NoScope hooks the `player_death` game event. A kill counts as a no-scope when the engine's `noscope` flag is set **and** the weapon is a sniper rifle (`awp`, `ssg08`, `scar20`, `g3sg1`) — no netvar reads needed. The distance is the 3D distance between the attacker and victim pawns. Qualifying kills (attacker/victim names + SteamIDs, distance, weapon, headshot, map, UTC timestamp) are recorded when the distance meets `MinDistanceToRecord`, and the attacker is privately told their running no-scope count. Database work runs off the main thread, with chat follow-ups marshalled back and the player re-validated by SteamID inside the callback.
+
+## 📦 Build
 
 Requires the .NET 10 SDK.
 
@@ -82,9 +72,15 @@ Requires the .NET 10 SDK.
 dotnet build -c Release
 ```
 
-Output lands in `.build/modules/NoScope/`. Copy that `NoScope/` folder (DLL + dependencies)
-into your server's `/game/sharp/modules/` directory.
+Outputs the module to `.build/modules/NoScope/` (DLL + dependencies) and the locale to `.build/locales/noscope.json`.
 
-## License
+## 🙏 Credits
 
-MIT.
+Port of the CounterStrikeSharp **NoScope** plugin to ModSharp.
+
+---
+
+<div align="center">
+  <p>Made with ❤️ by <a href="https://github.com/yappershq">yappershq</a></p>
+  <p>⭐ Star this repo if you find it useful!</p>
+</div>
